@@ -11,6 +11,7 @@ The project demonstrates how a single primary DAX measure can present local date
 The following screenshot shows the Workday Monitor running in Power BI Service.
 
 ![Report Preview](./report-preview.png)
+link: https://tinyurl.com/3jb37evk
 
 Power BI Workday Monitor displays:
 
