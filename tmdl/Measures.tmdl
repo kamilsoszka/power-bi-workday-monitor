@@ -1,0 +1,645 @@
+createOrReplace
+
+	table _Measures
+		lineageTag: 9e645987-0db5-46b1-8864-1bea76475a86
+
+		measure 'Workday Monitor' =
+				
+				
+				// ============================================================
+				// DISPLAY CONFIGURATION
+				// ============================================================
+				VAR LineBreak =
+				    UNICHAR(10)
+				
+				VAR SectionBreak =
+				    LineBreak & LineBreak
+				
+				VAR SecondsPerDay =
+				    86400
+				
+				VAR SecondsPerHour =
+				    3600
+				
+				VAR SecondsPerMinute =
+				    60
+				
+				VAR ProgressBarLength =
+				    20
+				
+				
+				// ============================================================
+				// WORKDAY CONFIGURATION
+				// Change these values to configure the working schedule.
+				// The schedule must start and end on the same calendar day.
+				// ============================================================
+				VAR WorkStartTime =
+				    TIME(8, 0, 0)
+				
+				VAR WorkEndTime =
+				    TIME(16, 0, 0)
+				
+				VAR IsWorkScheduleValid =
+				    WorkEndTime > WorkStartTime
+				
+				
+				// ============================================================
+				// CURRENT UTC DATE AND TIME
+				// UTC is used as the common reference time.
+				// ============================================================
+				VAR CurrentUtcDateTime =
+				    UTCNOW()
+				
+				VAR CurrentYear =
+				    YEAR(CurrentUtcDateTime)
+				
+				
+				// ============================================================
+				// EUROPE/WARSAW DAYLIGHT SAVING TIME
+				// DST starts on the last Sunday of March at 01:00 UTC.
+				// DST ends on the last Sunday of October at 01:00 UTC.
+				// ============================================================
+				VAR LastDayOfMarch =
+				    DATE(CurrentYear, 3, 31)
+				
+				VAR LastSundayOfMarch =
+				    LastDayOfMarch
+				        - MOD(
+				            WEEKDAY(LastDayOfMarch, 2),
+				            7
+				        )
+				
+				VAR DstStartUtc =
+				    LastSundayOfMarch
+				        + TIME(1, 0, 0)
+				
+				VAR LastDayOfOctober =
+				    DATE(CurrentYear, 10, 31)
+				
+				VAR LastSundayOfOctober =
+				    LastDayOfOctober
+				        - MOD(
+				            WEEKDAY(LastDayOfOctober, 2),
+				            7
+				        )
+				
+				VAR DstEndUtc =
+				    LastSundayOfOctober
+				        + TIME(1, 0, 0)
+				
+				VAR IsDaylightSavingTime =
+				    CurrentUtcDateTime >= DstStartUtc
+				        && CurrentUtcDateTime < DstEndUtc
+				
+				VAR CurrentUtcOffsetHours =
+				    IF(
+				        IsDaylightSavingTime,
+				        2,
+				        1
+				    )
+				
+				VAR CurrentTimeZoneName =
+				    IF(
+				        IsDaylightSavingTime,
+				        "CEST (UTC+2)",
+				        "CET (UTC+1)"
+				    )
+				
+				VAR CurrentLocalDateTime =
+				    CurrentUtcDateTime
+				        + DIVIDE(
+				            CurrentUtcOffsetHours,
+				            24
+				        )
+				
+				VAR CurrentLocalTime =
+				    MOD(
+				        CurrentLocalDateTime,
+				        1
+				    )
+				
+				
+				// ============================================================
+				// WORKING DAY DETECTION
+				// WEEKDAY return type 2 means Monday = 1 and Sunday = 7.
+				// Saturday and Sunday are treated as non-working days.
+				// ============================================================
+				VAR IsWeekend =
+				    WEEKDAY(
+				        CurrentLocalDateTime,
+				        2
+				    ) >= 6
+				
+				VAR WorkdayMessage =
+				    IF(
+				        IsWeekend,
+				        "No working hours scheduled",
+				        BLANK()
+				    )
+				
+				
+				// ============================================================
+				// WORKDAY DURATION
+				// DAX stores time as a fraction of a 24-hour day.
+				// ============================================================
+				VAR WorkdayDurationSeconds =
+				    IF(
+				        IsWorkScheduleValid,
+				        ROUND(
+				            (WorkEndTime - WorkStartTime)
+				                * SecondsPerDay,
+				            0
+				        ),
+				        0
+				    )
+				
+				VAR WorkdayDurationHours =
+				    INT(
+				        DIVIDE(
+				            WorkdayDurationSeconds,
+				            SecondsPerHour,
+				            0
+				        )
+				    )
+				
+				VAR WorkdayDurationMinutes =
+				    INT(
+				        DIVIDE(
+				            MOD(
+				                WorkdayDurationSeconds,
+				                SecondsPerHour
+				            ),
+				            SecondsPerMinute,
+				            0
+				        )
+				    )
+				
+				VAR WorkdayDurationRemainingSeconds =
+				    MOD(
+				        WorkdayDurationSeconds,
+				        SecondsPerMinute
+				    )
+				
+				VAR WorkdayDurationText =
+				    FORMAT(
+				        WorkdayDurationHours,
+				        "00"
+				    )
+				        & ":"
+				        & FORMAT(
+				            WorkdayDurationMinutes,
+				            "00"
+				        )
+				        & ":"
+				        & FORMAT(
+				            WorkdayDurationRemainingSeconds,
+				            "00"
+				        )
+				
+				
+				// ============================================================
+				// ELAPSED WORK TIME
+				// Invalid schedule: zero.
+				// Weekend: zero.
+				// Before work: zero.
+				// During work: current local time minus work start.
+				// After work: full workday duration.
+				// ============================================================
+				VAR UnboundedElapsedSeconds =
+				    SWITCH(
+				        TRUE(),
+				
+				        NOT IsWorkScheduleValid,
+				            0,
+				
+				        IsWeekend,
+				            0,
+				
+				        CurrentLocalTime <= WorkStartTime,
+				            0,
+				
+				        CurrentLocalTime >= WorkEndTime,
+				            WorkdayDurationSeconds,
+				
+				        ROUND(
+				            (CurrentLocalTime - WorkStartTime)
+				                * SecondsPerDay,
+				            0
+				        )
+				    )
+				
+				VAR ElapsedSeconds =
+				    MAX(
+				        0,
+				        MIN(
+				            WorkdayDurationSeconds,
+				            UnboundedElapsedSeconds
+				        )
+				    )
+				
+				VAR ElapsedHours =
+				    INT(
+				        DIVIDE(
+				            ElapsedSeconds,
+				            SecondsPerHour,
+				            0
+				        )
+				    )
+				
+				VAR ElapsedMinutes =
+				    INT(
+				        DIVIDE(
+				            MOD(
+				                ElapsedSeconds,
+				                SecondsPerHour
+				            ),
+				            SecondsPerMinute,
+				            0
+				        )
+				    )
+				
+				VAR ElapsedRemainingSeconds =
+				    MOD(
+				        ElapsedSeconds,
+				        SecondsPerMinute
+				    )
+				
+				VAR ElapsedTimeText =
+				    FORMAT(
+				        ElapsedHours,
+				        "00"
+				    )
+				        & ":"
+				        & FORMAT(
+				            ElapsedMinutes,
+				            "00"
+				        )
+				        & ":"
+				        & FORMAT(
+				            ElapsedRemainingSeconds,
+				            "00"
+				        )
+				
+				
+				// ============================================================
+				// REMAINING WORK TIME
+				// Invalid schedule: zero.
+				// Weekend: zero.
+				// Working day: duration minus elapsed time.
+				// ============================================================
+				VAR RemainingSeconds =
+				    IF(
+				        NOT IsWorkScheduleValid
+				            || IsWeekend,
+				        0,
+				        MAX(
+				            0,
+				            WorkdayDurationSeconds - ElapsedSeconds
+				        )
+				    )
+				
+				VAR RemainingHours =
+				    INT(
+				        DIVIDE(
+				            RemainingSeconds,
+				            SecondsPerHour,
+				            0
+				        )
+				    )
+				
+				VAR RemainingMinutes =
+				    INT(
+				        DIVIDE(
+				            MOD(
+				                RemainingSeconds,
+				                SecondsPerHour
+				            ),
+				            SecondsPerMinute,
+				            0
+				        )
+				    )
+				
+				VAR RemainingFinalSeconds =
+				    MOD(
+				        RemainingSeconds,
+				        SecondsPerMinute
+				    )
+				
+				VAR RemainingTimeText =
+				    FORMAT(
+				        RemainingHours,
+				        "00"
+				    )
+				        & ":"
+				        & FORMAT(
+				            RemainingMinutes,
+				            "00"
+				        )
+				        & ":"
+				        & FORMAT(
+				            RemainingFinalSeconds,
+				            "00"
+				        )
+				
+				
+				// ============================================================
+				// WORKDAY PROGRESS
+				// Values are limited to the range from 0 to 1.
+				// Weekend and invalid schedule values are set to zero.
+				// ============================================================
+				VAR WorkdayProgress =
+				    IF(
+				        NOT IsWorkScheduleValid
+				            || IsWeekend,
+				        0,
+				        MIN(
+				            1,
+				            MAX(
+				                0,
+				                DIVIDE(
+				                    ElapsedSeconds,
+				                    WorkdayDurationSeconds,
+				                    0
+				                )
+				            )
+				        )
+				    )
+				
+				VAR RemainingWorkday =
+				    IF(
+				        NOT IsWorkScheduleValid
+				            || IsWeekend,
+				        0,
+				        1 - WorkdayProgress
+				    )
+				
+				VAR WorkdayProgressText =
+				    FORMAT(
+				        WorkdayProgress,
+				        "0.0%"
+				    )
+				
+				VAR RemainingWorkdayText =
+				    FORMAT(
+				        RemainingWorkday,
+				        "0.0%"
+				    )
+				
+				
+				// ============================================================
+				// WORKDAY STATUS
+				// ============================================================
+				VAR WorkdayStatus =
+				    SWITCH(
+				        TRUE(),
+				
+				        NOT IsWorkScheduleValid,
+				            "Invalid work schedule",
+				
+				        IsWeekend,
+				            "Weekend",
+				
+				        CurrentLocalTime < WorkStartTime,
+				            "Before work",
+				
+				        CurrentLocalTime < WorkEndTime,
+				            "Work in progress",
+				
+				        "Workday completed"
+				    )
+				
+				
+				// ============================================================
+				// TEXT PROGRESS BAR
+				// ASCII characters are used for broad font compatibility.
+				// Example: ========------------ 40.0%
+				// ============================================================
+				VAR CompletedBlocks =
+				    MIN(
+				        ProgressBarLength,
+				        MAX(
+				            0,
+				            ROUND(
+				                WorkdayProgress
+				                    * ProgressBarLength,
+				                0
+				            )
+				        )
+				    )
+				
+				VAR RemainingBlocks =
+				    ProgressBarLength - CompletedBlocks
+				
+				VAR ProgressBarText =
+				    REPT(
+				        "=",
+				        CompletedBlocks
+				    )
+				        & REPT(
+				            "-",
+				            RemainingBlocks
+				        )
+				        & " "
+				        & WorkdayProgressText
+				
+				
+				// ============================================================
+				// LAST DATA REFRESH
+				// RefreshInfo[LastRefreshUTC] must be created in Power Query.
+				// The stored UTC timestamp is converted to Warsaw local time.
+				// ============================================================
+				VAR LastRefreshUtc =
+				    MAX(
+				        RefreshInfo[LastRefreshUTC]
+				    )
+				
+				VAR HasRefreshTimestamp =
+				    NOT ISBLANK(LastRefreshUtc)
+				
+				VAR RefreshYear =
+				    IF(
+				        HasRefreshTimestamp,
+				        YEAR(LastRefreshUtc),
+				        CurrentYear
+				    )
+				
+				VAR RefreshLastDayOfMarch =
+				    DATE(RefreshYear, 3, 31)
+				
+				VAR RefreshLastSundayOfMarch =
+				    RefreshLastDayOfMarch
+				        - MOD(
+				            WEEKDAY(
+				                RefreshLastDayOfMarch,
+				                2
+				            ),
+				            7
+				        )
+				
+				VAR RefreshDstStartUtc =
+				    RefreshLastSundayOfMarch
+				        + TIME(1, 0, 0)
+				
+				VAR RefreshLastDayOfOctober =
+				    DATE(RefreshYear, 10, 31)
+				
+				VAR RefreshLastSundayOfOctober =
+				    RefreshLastDayOfOctober
+				        - MOD(
+				            WEEKDAY(
+				                RefreshLastDayOfOctober,
+				                2
+				            ),
+				            7
+				        )
+				
+				VAR RefreshDstEndUtc =
+				    RefreshLastSundayOfOctober
+				        + TIME(1, 0, 0)
+				
+				VAR IsRefreshDaylightSavingTime =
+				    HasRefreshTimestamp
+				        && LastRefreshUtc >= RefreshDstStartUtc
+				        && LastRefreshUtc < RefreshDstEndUtc
+				
+				VAR RefreshUtcOffsetHours =
+				    IF(
+				        IsRefreshDaylightSavingTime,
+				        2,
+				        1
+				    )
+				
+				VAR RefreshTimeZoneName =
+				    IF(
+				        IsRefreshDaylightSavingTime,
+				        "CEST",
+				        "CET"
+				    )
+				
+				VAR LastRefreshLocalDateTime =
+				    IF(
+				        HasRefreshTimestamp,
+				        LastRefreshUtc
+				            + DIVIDE(
+				                RefreshUtcOffsetHours,
+				                24
+				            ),
+				        BLANK()
+				    )
+				
+				VAR LastRefreshText =
+				    IF(
+				        NOT HasRefreshTimestamp,
+				        "Not available",
+				        FORMAT(
+				            LastRefreshLocalDateTime,
+				            "dd MMM yyyy HH:mm:ss"
+				        )
+				            & " "
+				            & RefreshTimeZoneName
+				    )
+				
+				
+				// ============================================================
+				// FINAL TEXT OUTPUT
+				// LineBreak inserts a new line.
+				// SectionBreak inserts one empty visual line.
+				// ============================================================
+				RETURN
+				    "WORKDAY MONITOR"
+				        & SectionBreak
+				
+				        & "Current date: "
+				        & FORMAT(
+				            CurrentLocalDateTime,
+				            "dd MMM yyyy"
+				        )
+				        & LineBreak
+				
+				        & "Current time: "
+				        & FORMAT(
+				            CurrentLocalDateTime,
+				            "HH:mm:ss"
+				        )
+				        & LineBreak
+				
+				        & "Time zone: "
+				        & CurrentTimeZoneName
+				        & SectionBreak
+				
+				        & "Work start: "
+				        & FORMAT(
+				            WorkStartTime,
+				            "HH:mm:ss"
+				        )
+				        & LineBreak
+				
+				        & "Work end: "
+				        & FORMAT(
+				            WorkEndTime,
+				            "HH:mm:ss"
+				        )
+				        & LineBreak
+				
+				        & "Workday duration: "
+				        & WorkdayDurationText
+				        & SectionBreak
+				
+				        & "Elapsed time: "
+				        & ElapsedTimeText
+				        & LineBreak
+				
+				        & "Remaining time: "
+				        & RemainingTimeText
+				        & LineBreak
+				
+				        & "Progress: "
+				        & WorkdayProgressText
+				        & LineBreak
+				
+				        & "Remaining: "
+				        & RemainingWorkdayText
+				        & LineBreak
+				
+				        & "Status: "
+				        & WorkdayStatus
+				
+				        & IF(
+				            IsWeekend,
+				            LineBreak & WorkdayMessage,
+				            BLANK()
+				        )
+				        & SectionBreak
+				
+				        & "Progress bar:"
+				        & LineBreak
+				
+				        & ProgressBarText
+				        & SectionBreak
+				
+				        & "Last refreshed date:"
+				        & LineBreak
+				
+				        & LastRefreshText
+			lineageTag: 7b9caf22-7c8e-45b5-8c39-4d14ff32ea61
+			dataCategory: Uncategorized
+
+		column Placeholder
+			dataType: string
+			isHidden
+			lineageTag: d83784fa-89c0-4a5e-a627-541364bd2b2b
+			summarizeBy: none
+			sourceColumn: Placeholder
+
+			changedProperty = IsHidden
+
+			annotation SummarizationSetBy = Automatic
+
+		partition _Measures = m
+			mode: import
+			source =
+					let
+					  Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i45W8k1NLC4tSi1Wio0FAA==", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [#"Placeholder#(lf)" = _t])
+					in
+					  Source
+
